@@ -5,8 +5,7 @@
   "type": "module",
   "keywords": [
     "pi-package",
-    "pi-extension",
-    "thinking"
+    "pi-extension"
   ],
   "files": [
     "index.ts",
