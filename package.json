@@ -2,6 +2,11 @@
   "name": "pi-compact-thinking",
   "version": "0.1.0",
   "description": "Compact animated reasoning previews for Pi",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nostalfinals/pi-compact-thinking.git"
+  },
   "type": "module",
   "keywords": [
     "pi-package",
@@ -9,7 +14,9 @@
   ],
   "files": [
     "index.ts",
-    "lib"
+    "lib",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "check": "tsc --noEmit"
