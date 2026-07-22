@@ -256,7 +256,7 @@ export default function compactThinking(pi: ExtensionAPI) {
       self.contentContainer.addChild(new Text(heading, self.outputPad, 0));
 
       const previewSource = latestSummary?.body ?? thinkingBlocks.join("\n\n");
-      if (previewSource.trim()) {
+      if (config.previewLines > 0 && previewSource.trim()) {
         self.contentContainer.addChild(
           new StrictThinkingPreview(
             previewSource.trim(),

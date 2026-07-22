@@ -29,7 +29,7 @@ function loadConfig(): CompactThinkingConfig {
   if (
     typeof value.useSummaryTitlesAsThinkingTitle !== "boolean" ||
     !Number.isInteger(value.previewLines) ||
-    (value.previewLines ?? 0) < 1 ||
+    (value.previewLines ?? 0) < 0 ||
     !Number.isFinite(value.animationIntervalMs) ||
     (value.animationIntervalMs ?? 0) < 1
   ) {
