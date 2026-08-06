@@ -43,14 +43,22 @@ export default function compactThinking(pi: ExtensionAPI) {
   let latestComponentTimestamp: number | undefined;
   let animationTimer: ReturnType<typeof setInterval> | undefined;
   let animationFrame = 0;
-  let patchInstalled = true;
+  let patchInstalled = false;
 
   function refreshRenderedComponents() {
+    if (activeTui) {
+      // Pi renders a resumed session before rebinding extensions. Invalidate
+      // the component tree after installing the patch so those prebuilt
+      // AssistantMessageComponents run updateContent again.
+      activeTui.invalidate();
+      activeTui.requestRender(true);
+      return;
+    }
+
     for (const component of renderedComponents) {
       const self = component as unknown as AssistantInternals;
       if (self.lastMessage) self.updateContent(self.lastMessage);
     }
-    activeTui?.requestRender(true);
   }
 
   function thinkingStyle(text: string) {
@@ -126,7 +134,8 @@ export default function compactThinking(pi: ExtensionAPI) {
     );
   }
 
-  prototype.updateContent = function patchedUpdateContent(
+  function patchedUpdateContent(
+    this: AssistantMessageComponent,
     message: AssistantMessage,
   ) {
     const component = this as AssistantMessageComponent;
@@ -323,7 +332,7 @@ export default function compactThinking(pi: ExtensionAPI) {
         );
       }
     }
-  };
+  }
 
   function startThinking(message: AssistantMessage, contentIndex: number) {
     activeThinking = {
@@ -431,9 +440,11 @@ export default function compactThinking(pi: ExtensionAPI) {
   });
 
   pi.on("session_start", (_event, ctx) => {
+    if (ctx.mode !== "tui") return;
+    prototype.updateContent = patchedUpdateContent;
+    patchInstalled = true;
     restoreDurationEntries(ctx.sessionManager.getBranch(), completedDurations);
     activeTheme = ctx.ui.theme;
-    if (ctx.mode !== "tui") return;
 
     // An empty widget gives the animation loop access to requestRender without
     // enabling terminal mouse reporting or intercepting native scrollback input.
