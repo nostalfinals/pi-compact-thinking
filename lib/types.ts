@@ -25,6 +25,17 @@ export interface ActiveThinking {
   startedAt: number;
 }
 
+export interface MarkdownTransformContext {
+  messageType: string;
+  isStreaming: boolean;
+  availableWidth: number;
+}
+
+export type MarkdownTransformer = (
+  markdown: string,
+  context: MarkdownTransformContext,
+) => string | undefined;
+
 export interface AssistantInternals {
   contentContainer: {
     clear(): void;
@@ -34,11 +45,13 @@ export interface AssistantInternals {
   markdownTheme: ConstructorParameters<typeof Markdown>[3];
   hiddenThinkingLabel: string;
   outputPad: number;
+  isStreaming?: boolean;
+  markdownTransformers?: readonly MarkdownTransformer[];
   lastMessage?: AssistantMessage;
   hasToolCalls: boolean;
-  updateContent(message: AssistantMessage): void;
+  updateContent(message: AssistantMessage, isStreaming?: boolean): void;
 }
 
 export type PatchedPrototype = typeof AssistantMessageComponent.prototype & {
-  updateContent: (message: AssistantMessage) => void;
+  updateContent: (message: AssistantMessage, isStreaming?: boolean) => void;
 };

@@ -23,11 +23,46 @@ import type {
   ActiveThinking,
   AssistantInternals,
   DurationEntryData,
+  MarkdownTransformer,
   PatchedPrototype,
   SummaryPart,
 } from "./lib/types.ts";
 
 const WIDGET_ID = "compact-thinking-render-loop";
+type MarkdownOptions = NonNullable<ConstructorParameters<typeof Markdown>[5]>;
+
+function getAssistantMarkdownOptions(
+  self: AssistantInternals,
+  isStreaming: boolean,
+): MarkdownOptions | undefined {
+  const transformers = self.markdownTransformers;
+  if (!transformers || transformers.length === 0) return undefined;
+
+  // `markdownTransformers` and Markdown's `transform` option are internal Pi
+  // APIs. Keep this optional so the extension remains compatible with Pi
+  // versions that predate the transformer pipeline.
+  return {
+    transform(markdown: string, availableWidth: number) {
+      let transformedMarkdown = markdown;
+      for (const transformer of transformers) {
+        try {
+          const transformed = transformer(transformedMarkdown, {
+            messageType: "assistant",
+            isStreaming,
+            availableWidth,
+          } satisfies Parameters<MarkdownTransformer>[1]);
+          if (typeof transformed === "string") {
+            transformedMarkdown = transformed;
+          }
+        } catch {
+          // Match Pi's behavior: one broken transformer must not prevent the
+          // remaining Markdown from rendering.
+        }
+      }
+      return transformedMarkdown;
+    },
+  } as unknown as MarkdownOptions;
+}
 
 export default function compactThinking(pi: ExtensionAPI) {
   const prototype = AssistantMessageComponent.prototype as PatchedPrototype;
@@ -137,9 +172,12 @@ export default function compactThinking(pi: ExtensionAPI) {
   function patchedUpdateContent(
     this: AssistantMessageComponent,
     message: AssistantMessage,
+    isStreaming?: boolean,
   ) {
     const component = this as AssistantMessageComponent;
     const self = this as unknown as AssistantInternals;
+    const currentIsStreaming = isStreaming ?? self.isStreaming ?? false;
+    self.isStreaming = currentIsStreaming;
     self.lastMessage = message;
     renderedComponents.add(component);
     latestComponent = component;
@@ -177,7 +215,14 @@ export default function compactThinking(pi: ExtensionAPI) {
 
       if (content.type === "text" && content.text.trim()) {
         self.contentContainer.addChild(
-          new Markdown(content.text.trim(), self.outputPad, 0, self.markdownTheme),
+          new Markdown(
+            content.text.trim(),
+            self.outputPad,
+            0,
+            self.markdownTheme,
+            undefined,
+            getAssistantMarkdownOptions(self, currentIsStreaming),
+          ),
         );
         continue;
       }
