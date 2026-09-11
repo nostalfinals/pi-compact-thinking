@@ -23,6 +23,11 @@ export class StrictThinkingPreview implements Component {
   private padding: number;
   private style: (text: string) => string;
 
+  // Cache for rendered output
+  private cachedText?: string;
+  private cachedWidth?: number;
+  private cachedLines?: string[];
+
   constructor(
     text: string,
     padding: number,
@@ -34,16 +39,36 @@ export class StrictThinkingPreview implements Component {
   }
 
   render(width: number) {
-    const lines = new Text(this.style(this.text), this.padding, 0).render(width);
-    if (lines.length <= config.previewLines) return lines;
+    // Check cache
+    if (this.cachedLines && this.cachedText === this.text && this.cachedWidth === width) {
+      return this.cachedLines;
+    }
 
-    const hiddenLines = lines.length - config.previewLines;
-    const noun = hiddenLines === 1 ? "line" : "lines";
-    const toggleHint = getThinkingToggleHint();
-    const hint = `... (${hiddenLines} more ${noun}${toggleHint ? `, ${toggleHint}` : ""})`;
-    const hintLines = new Text(this.style(hint), this.padding, 0).render(width);
-    return [...hintLines, ...lines.slice(-config.previewLines)];
+    const lines = new Text(this.style(this.text), this.padding, 0).render(width);
+    let result: string[];
+    if (lines.length <= config.previewLines) {
+      result = lines;
+    } else {
+      const hiddenLines = lines.length - config.previewLines;
+      const noun = hiddenLines === 1 ? "line" : "lines";
+      const toggleHint = getThinkingToggleHint();
+      const hint = `... (${hiddenLines} more ${noun}${toggleHint ? `, ${toggleHint}` : ""})`;
+      const hintLines = new Text(this.style(hint), this.padding, 0).render(width);
+      result = [...hintLines, ...lines.slice(-config.previewLines)];
+    }
+
+    // Update cache
+    this.cachedText = this.text;
+    this.cachedWidth = width;
+    this.cachedLines = result;
+
+    return result;
   }
 
-  invalidate() {}
+  invalidate() {
+    // Clear cache
+    this.cachedText = undefined;
+    this.cachedWidth = undefined;
+    this.cachedLines = undefined;
+  }
 }
