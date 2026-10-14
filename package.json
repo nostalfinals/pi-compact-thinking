@@ -19,7 +19,9 @@
     "LICENSE"
   ],
   "scripts": {
-    "check": "tsc --noEmit"
+    "check": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "pi": {
     "extensions": [
@@ -36,6 +38,7 @@
     "@earendil-works/pi-coding-agent": "0.80.10",
     "@earendil-works/pi-tui": "0.80.10",
     "@types/node": "24.12.4",
+    "prettier": "^3.9.10",
     "typescript": "5.9.3"
   },
   "engines": {

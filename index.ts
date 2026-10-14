@@ -6,14 +6,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { Markdown, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
 import { config } from "./lib/config.ts";
-import {
-  DURATION_ENTRY_TYPE,
-  restoreDurationEntries,
-} from "./lib/durations.ts";
-import {
-  formatThoughtDuration,
-  StrictThinkingPreview,
-} from "./lib/preview.ts";
+import { CompactThinking } from "./lib/compact-thinking.ts";
+import { formatThoughtDuration, StrictThinkingPreview } from "./lib/preview.ts";
 import {
   getLatestOpenAiSummary,
   isOpenAiResponsesMessage,
@@ -22,7 +16,6 @@ import {
 import type {
   ActiveThinking,
   AssistantInternals,
-  DurationEntryData,
   MarkdownTransformer,
   PatchedPrototype,
   SummaryPart,
@@ -65,10 +58,11 @@ function getAssistantMarkdownOptions(
 }
 
 export default function compactThinking(pi: ExtensionAPI) {
+  const compactThinking = new CompactThinking(pi);
+
   const prototype = AssistantMessageComponent.prototype as PatchedPrototype;
   const originalUpdateContent = prototype.updateContent;
 
-  const completedDurations = new Map<number, Map<number, number>>();
   const renderedComponents = new Set<AssistantMessageComponent>();
   const streamingComponents = new Set<AssistantMessageComponent>();
   let activeThinking: ActiveThinking | undefined;
@@ -97,34 +91,22 @@ export default function compactThinking(pi: ExtensionAPI) {
   }
 
   function thinkingStyle(text: string) {
-    return activeTheme
-      ? activeTheme.italic(activeTheme.fg("thinkingText", text))
-      : text;
+    return activeTheme ? activeTheme.italic(activeTheme.fg("thinkingText", text)) : text;
   }
 
   function summaryTitleStyle(text: string) {
     return activeTheme
-      ? activeTheme.italic(
-          activeTheme.bold(activeTheme.fg("thinkingText", text)),
-        )
+      ? activeTheme.italic(activeTheme.bold(activeTheme.fg("thinkingText", text)))
       : text;
   }
 
-  function animatedText(
-    text: string,
-    baseStyle: (value: string) => string,
-    animate: boolean,
-  ) {
+  function animatedText(text: string, baseStyle: (value: string) => string, animate: boolean) {
     if (!animate || !activeTheme) return baseStyle(text);
 
     const characters = Array.from(text);
     if (characters.length === 0) return "";
-    const highlightWidth = Math.max(
-      1,
-      Math.min(5, Math.ceil(characters.length * 0.28)),
-    );
-    const start =
-      (animationFrame % (characters.length + highlightWidth)) - highlightWidth;
+    const highlightWidth = Math.max(1, Math.min(5, Math.ceil(characters.length * 0.28)));
+    const start = (animationFrame % (characters.length + highlightWidth)) - highlightWidth;
     const end = start + highlightWidth;
     const before = characters.slice(0, Math.max(0, start)).join("");
     const highlighted = characters
@@ -135,33 +117,13 @@ export default function compactThinking(pi: ExtensionAPI) {
     return (
       baseStyle(before) +
       (highlighted
-        ? activeTheme.italic(
-            activeTheme.bold(activeTheme.fg("text", highlighted)),
-          )
+        ? activeTheme.italic(activeTheme.bold(activeTheme.fg("text", highlighted)))
         : "") +
       baseStyle(after)
     );
   }
 
-  function getCompletedDuration(
-    messageTimestamp: number,
-    startIndex: number,
-    endIndex: number,
-  ) {
-    const durations = completedDurations.get(messageTimestamp);
-    if (!durations) return undefined;
-    for (let index = endIndex; index >= startIndex; index--) {
-      const duration = durations.get(index);
-      if (duration !== undefined) return duration;
-    }
-    return undefined;
-  }
-
-  function isActiveRun(
-    message: AssistantMessage,
-    startIndex: number,
-    endIndex: number,
-  ) {
+  function isActiveRun(message: AssistantMessage, startIndex: number, endIndex: number) {
     return (
       activeThinking?.messageTimestamp === message.timestamp &&
       activeThinking.contentIndex >= startIndex &&
@@ -246,10 +208,7 @@ export default function compactThinking(pi: ExtensionAPI) {
         if (!thinking) continue;
         thinkingBlocks.push(thinking);
 
-        if (
-          config.useSummaryTitlesAsThinkingTitle &&
-          isOpenAiResponsesMessage(message)
-        ) {
+        if (config.useSummaryTitlesAsThinkingTitle && isOpenAiResponsesMessage(message)) {
           const contentIsActive =
             activeThinking?.messageTimestamp === message.timestamp &&
             activeThinking.contentIndex === i;
@@ -258,12 +217,12 @@ export default function compactThinking(pi: ExtensionAPI) {
           // title immediately replaces the old one instead of appearing in its
           // preview body. Once complete, the structured signature is canonical.
           latestSummary = contentIsActive
-            ? parseLatestStreamingSummary(thinking) ??
+            ? (parseLatestStreamingSummary(thinking) ??
               getLatestOpenAiSummary(thinkingContent.thinkingSignature) ??
-              latestSummary
-            : getLatestOpenAiSummary(thinkingContent.thinkingSignature) ??
+              latestSummary)
+            : (getLatestOpenAiSummary(thinkingContent.thinkingSignature) ??
               parseLatestStreamingSummary(thinking) ??
-              latestSummary;
+              latestSummary);
         }
       }
       const runEndIndex = i - 1;
@@ -280,14 +239,13 @@ export default function compactThinking(pi: ExtensionAPI) {
       const elapsedMs = activeThinking
         ? Math.max(1, Date.now() - activeThinking.startedAt)
         : undefined;
-      const completedMs = getCompletedDuration(
+      const completedMs = compactThinking.findDurationsInRange(
         message.timestamp,
         runStartIndex,
         runEndIndex,
       );
       const durationMs = active ? elapsedMs : completedMs;
-      const durationText =
-        durationMs === undefined ? undefined : formatThoughtDuration(durationMs);
+      const durationText = durationMs === undefined ? undefined : formatThoughtDuration(durationMs);
 
       let heading: string;
       if (active && latestSummary) {
@@ -302,9 +260,7 @@ export default function compactThinking(pi: ExtensionAPI) {
       } else {
         // Completed compact blocks use one provider-independent status line.
         heading = thinkingStyle(
-          durationText
-            ? `Thought for ${durationText}`
-            : self.hiddenThinkingLabel || "Thinking...",
+          durationText ? `Thought for ${durationText}` : self.hiddenThinkingLabel || "Thinking...",
         );
       }
       self.contentContainer.addChild(new Text(heading, self.outputPad, 0));
@@ -312,11 +268,7 @@ export default function compactThinking(pi: ExtensionAPI) {
       const previewSource = latestSummary?.body ?? thinkingBlocks.join("\n\n");
       if (config.previewLines > 0 && previewSource.trim()) {
         self.contentContainer.addChild(
-          new StrictThinkingPreview(
-            previewSource.trim(),
-            self.outputPad,
-            thinkingStyle,
-          ),
+          new StrictThinkingPreview(previewSource.trim(), self.outputPad, thinkingStyle),
         );
       }
 
@@ -330,9 +282,7 @@ export default function compactThinking(pi: ExtensionAPI) {
       if (hasVisibleContentAfter) self.contentContainer.addChild(new Spacer(1));
     }
 
-    const hasToolCalls = message.content.some(
-      (content) => content.type === "toolCall",
-    );
+    const hasToolCalls = message.content.some((content) => content.type === "toolCall");
     self.hasToolCalls = hasToolCalls;
 
     if (message.stopReason === "length") {
@@ -392,10 +342,7 @@ export default function compactThinking(pi: ExtensionAPI) {
     // thinking_start partial just before this extension receives the event.
     // Re-render that component immediately so users do not wait for the first
     // summary delta before seeing the animation.
-    if (
-      latestComponent &&
-      latestComponentTimestamp === message.timestamp
-    ) {
+    if (latestComponent && latestComponentTimestamp === message.timestamp) {
       streamingComponents.add(latestComponent);
       const self = latestComponent as unknown as AssistantInternals;
       self.updateContent(message);
@@ -417,17 +364,7 @@ export default function compactThinking(pi: ExtensionAPI) {
     if (!activeThinking) return;
     const finished = activeThinking;
     const durationMs = Math.max(1, Date.now() - finished.startedAt);
-    let durations = completedDurations.get(finished.messageTimestamp);
-    if (!durations) {
-      durations = new Map();
-      completedDurations.set(finished.messageTimestamp, durations);
-    }
-    durations.set(finished.contentIndex, durationMs);
-    pi.appendEntry<DurationEntryData>(DURATION_ENTRY_TYPE, {
-      messageTimestamp: finished.messageTimestamp,
-      contentIndex: finished.contentIndex,
-      durationMs,
-    });
+    compactThinking.saveDuration(finished.messageTimestamp, finished.contentIndex, durationMs);
 
     activeThinking = undefined;
     if (animationTimer) clearInterval(animationTimer);
@@ -447,9 +384,7 @@ export default function compactThinking(pi: ExtensionAPI) {
     const update = event.assistantMessageEvent;
 
     if (update.type === "thinking_start") {
-      if (
-        activeThinking?.messageTimestamp === event.message.timestamp
-      ) {
+      if (activeThinking?.messageTimestamp === event.message.timestamp) {
         // Some Responses-compatible providers emit a fresh thinking_start for
         // each summary/reasoning item even though no text or tool boundary has
         // ended the visible Thinking run. Follow the new content block without
@@ -488,7 +423,7 @@ export default function compactThinking(pi: ExtensionAPI) {
     if (ctx.mode !== "tui") return;
     prototype.updateContent = patchedUpdateContent;
     patchInstalled = true;
-    restoreDurationEntries(ctx.sessionManager.getBranch(), completedDurations);
+    compactThinking.loadDurationsFromHistory(ctx.sessionManager.getBranch());
     activeTheme = ctx.ui.theme;
 
     // An empty widget gives the animation loop access to requestRender without
@@ -505,7 +440,7 @@ export default function compactThinking(pi: ExtensionAPI) {
   });
 
   pi.on("session_tree", (_event, ctx) => {
-    restoreDurationEntries(ctx.sessionManager.getBranch(), completedDurations);
+    compactThinking.loadDurationsFromHistory(ctx.sessionManager.getBranch());
     refreshRenderedComponents();
   });
 
@@ -517,7 +452,7 @@ export default function compactThinking(pi: ExtensionAPI) {
     activeTheme = undefined;
     latestComponent = undefined;
     latestComponentTimestamp = undefined;
-    completedDurations.clear();
+    compactThinking.clearDurations();
     renderedComponents.clear();
     streamingComponents.clear();
     if (ctx.mode === "tui") ctx.ui.setWidget(WIDGET_ID, undefined);

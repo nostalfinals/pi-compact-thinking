@@ -8,12 +8,6 @@ export interface CompactThinkingConfig {
   animationIntervalMs: number;
 }
 
-export interface DurationEntryData {
-  messageTimestamp: number;
-  contentIndex: number;
-  durationMs: number;
-}
-
 export interface SummaryPart {
   title: string;
   body: string;
