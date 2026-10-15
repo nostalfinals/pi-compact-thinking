@@ -23,6 +23,11 @@ export interface RenderOptions {
   isStreaming: boolean;
 }
 
+export interface ActiveThinkingText {
+  text: Text;
+  render(animationFrame: number): string;
+}
+
 interface ThinkingRun {
   startIndex: number;
   endIndex: number;
@@ -202,7 +207,7 @@ function renderThinkingRun(
   message: AssistantMessage,
   thinkingRun: ThinkingRun,
   options: RenderOptions,
-) {
+): ActiveThinkingText | undefined {
   const { activeThinking, animationFrame, theme } = options;
   const isActive =
     activeThinking?.messageTimestamp === message.timestamp &&
@@ -221,39 +226,47 @@ function renderThinkingRun(
     self.contentContainer.addChild(new Spacer(1));
   }
 
-  const elapsedMs = activeThinking ? Math.max(1, Date.now() - activeThinking.startedAt) : undefined;
   const completedMs = compactThinking.findDurationsInRange(
     message.timestamp,
     thinkingRun.startIndex,
     thinkingRun.endIndex,
   );
-  const durationMs = isActive ? elapsedMs : completedMs;
-  const durationText = durationMs === undefined ? undefined : formatThoughtDuration(durationMs);
   const thinkingStyle = (text: string): string => styleThinkingText(theme, text);
-  const durationSuffix = durationText ? thinkingStyle(` · ${durationText}`) : "";
+  const renderHeading = (frame: number): string => {
+    const elapsedMs = activeThinking
+      ? Math.max(1, Date.now() - activeThinking.startedAt)
+      : undefined;
+    const durationMs = isActive ? elapsedMs : completedMs;
+    const durationText = durationMs === undefined ? undefined : formatThoughtDuration(durationMs);
+    const durationSuffix = durationText ? thinkingStyle(` · ${durationText}`) : "";
 
-  let heading: string;
+    if (isActive && thinkingRun.latestSummary) {
+      const animatedTitle = animateText(
+        thinkingRun.latestSummary.title,
+        (text): string => styleSummaryTitle(theme, text),
+        theme,
+        frame,
+      );
 
-  if (isActive && thinkingRun.latestSummary) {
-    const animatedTitle = animateText(
-      thinkingRun.latestSummary.title,
-      (text): string => styleSummaryTitle(theme, text),
-      theme,
-      animationFrame,
-    );
-    heading = animatedTitle + durationSuffix;
-  } else if (isActive) {
-    const label = self.hiddenThinkingLabel || "Thinking...";
-    const animatedLabel = animateText(label, thinkingStyle, theme, animationFrame);
-    heading = animatedLabel + durationSuffix;
-  } else {
+      return animatedTitle + durationSuffix;
+    }
+
+    if (isActive) {
+      const label = self.hiddenThinkingLabel || "Thinking...";
+      const animatedLabel = animateText(label, thinkingStyle, theme, frame);
+
+      return animatedLabel + durationSuffix;
+    }
+
     const label = durationText
       ? `Thought for ${durationText}`
       : self.hiddenThinkingLabel || "Thinking...";
-    heading = thinkingStyle(label);
-  }
 
-  self.contentContainer.addChild(new Text(heading, self.outputPad, 0));
+    return thinkingStyle(label);
+  };
+  const headingText = new Text(renderHeading(animationFrame), self.outputPad, 0);
+
+  self.contentContainer.addChild(headingText);
 
   const previewSource = thinkingRun.latestSummary?.body ?? thinkingRun.thinkingBlocks.join("\n\n");
 
@@ -270,6 +283,15 @@ function renderThinkingRun(
   if (hasVisibleContentAfter) {
     self.contentContainer.addChild(new Spacer(1));
   }
+
+  if (!isActive) {
+    return undefined;
+  }
+
+  return {
+    text: headingText,
+    render: renderHeading,
+  };
 }
 
 function renderStopReason(
@@ -307,7 +329,7 @@ export function renderAssistantMessage(
   compactThinking: CompactThinking,
   message: AssistantMessage,
   options: RenderOptions,
-) {
+): ActiveThinkingText | undefined {
   const self = component as unknown as MessageComponentInternals;
   self.contentContainer.clear();
 
@@ -319,6 +341,8 @@ export function renderAssistantMessage(
   if (shouldAddLeadingSpace) {
     self.contentContainer.addChild(new Spacer(1));
   }
+
+  let activeThinkingText: ActiveThinkingText | undefined;
 
   for (let index = 0; index < message.content.length; index++) {
     const content = message.content[index];
@@ -333,7 +357,18 @@ export function renderAssistantMessage(
     }
 
     const thinkingRun = collectThinkingRun(message, index, options.activeThinking);
-    renderThinkingRun(self, compactThinking, message, thinkingRun, options);
+    const renderedThinkingText = renderThinkingRun(
+      self,
+      compactThinking,
+      message,
+      thinkingRun,
+      options,
+    );
+
+    if (renderedThinkingText) {
+      activeThinkingText = renderedThinkingText;
+    }
+
     index = thinkingRun.endIndex;
   }
 
@@ -341,4 +376,6 @@ export function renderAssistantMessage(
 
   self.hasToolCalls = hasToolCalls;
   renderStopReason(self, message, options.theme, hasToolCalls);
+
+  return activeThinkingText;
 }

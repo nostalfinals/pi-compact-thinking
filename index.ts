@@ -7,7 +7,7 @@ import {
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { config } from "./lib/config.ts";
 import { CompactThinking } from "./lib/compact-thinking.ts";
-import { renderAssistantMessage } from "./lib/renderer.ts";
+import { renderAssistantMessage, type ActiveThinkingText } from "./lib/renderer.ts";
 import type { ActiveThinking, MessageComponentInternals, PatchedPrototype } from "./lib/types.ts";
 
 const WIDGET_ID = "compact-thinking-render-loop";
@@ -19,8 +19,8 @@ export default function compactThinking(pi: ExtensionAPI) {
   const originalUpdateContent = prototype.updateContent;
 
   const renderedComponents = new Set<AssistantMessageComponent>();
-  const streamingComponents = new Set<AssistantMessageComponent>();
   let activeThinking: ActiveThinking | undefined;
+  let activeThinkingText: ActiveThinkingText | undefined;
   let activeTheme: Theme | undefined;
   let activeTui: TUI | undefined;
   let latestComponent: AssistantMessageComponent | undefined;
@@ -62,20 +62,24 @@ export default function compactThinking(pi: ExtensionAPI) {
     // Visible mode is intentionally untouched: Shift+Tab restores Pi's exact
     // built-in Thinking Markdown renderer, including every OpenAI summary stage.
     if (!self.hideThinkingBlock) {
+      if (activeThinking?.messageTimestamp === message.timestamp) {
+        activeThinkingText = undefined;
+      }
+
       originalUpdateContent.call(this, message);
       return;
     }
 
-    if (activeThinking?.messageTimestamp === message.timestamp) {
-      streamingComponents.add(component);
-    }
-
-    renderAssistantMessage(component, compactThinking, message, {
+    const renderedThinkingText = renderAssistantMessage(component, compactThinking, message, {
       activeThinking,
       theme: activeTheme,
       animationFrame,
       isStreaming: currentIsStreaming,
     });
+
+    if (activeThinking?.messageTimestamp === message.timestamp) {
+      activeThinkingText = renderedThinkingText;
+    }
   }
 
   function startThinking(message: AssistantMessage, contentIndex: number) {
@@ -84,7 +88,7 @@ export default function compactThinking(pi: ExtensionAPI) {
       contentIndex,
       startedAt: Date.now(),
     };
-    streamingComponents.clear();
+    activeThinkingText = undefined;
     animationFrame = 0;
 
     // Depending on event-listener order, Pi may have rendered the empty
@@ -92,7 +96,6 @@ export default function compactThinking(pi: ExtensionAPI) {
     // Re-render that component immediately so users do not wait for the first
     // summary delta before seeing the animation.
     if (latestComponent && latestComponentTimestamp === message.timestamp) {
-      streamingComponents.add(latestComponent);
       const self = latestComponent as unknown as MessageComponentInternals;
       self.updateContent(message);
       activeTui?.requestRender();
@@ -101,10 +104,11 @@ export default function compactThinking(pi: ExtensionAPI) {
     if (animationTimer) clearInterval(animationTimer);
     animationTimer = setInterval(() => {
       animationFrame++;
-      for (const component of streamingComponents) {
-        const self = component as unknown as MessageComponentInternals;
-        if (self.lastMessage) self.updateContent(self.lastMessage);
+
+      if (activeThinkingText) {
+        activeThinkingText.text.setText(activeThinkingText.render(animationFrame));
       }
+
       activeTui?.requestRender();
     }, config.animationIntervalMs);
   }
@@ -112,19 +116,21 @@ export default function compactThinking(pi: ExtensionAPI) {
   function finishThinking() {
     if (!activeThinking) return;
     const finished = activeThinking;
+    const component =
+      latestComponentTimestamp === finished.messageTimestamp ? latestComponent : undefined;
     const durationMs = Math.max(1, Date.now() - finished.startedAt);
     compactThinking.saveDuration(finished.messageTimestamp, finished.contentIndex, durationMs);
 
     activeThinking = undefined;
+    activeThinkingText = undefined;
     if (animationTimer) clearInterval(animationTimer);
     animationTimer = undefined;
 
-    const components = [...streamingComponents];
-    streamingComponents.clear();
-    for (const component of components) {
+    if (component) {
       const self = component as unknown as MessageComponentInternals;
       if (self.lastMessage) self.updateContent(self.lastMessage);
     }
+
     activeTui?.requestRender();
   }
 
@@ -203,7 +209,7 @@ export default function compactThinking(pi: ExtensionAPI) {
     latestComponentTimestamp = undefined;
     compactThinking.stop();
     renderedComponents.clear();
-    streamingComponents.clear();
+    activeThinkingText = undefined;
     if (ctx.mode === "tui") ctx.ui.setWidget(WIDGET_ID, undefined);
 
     if (patchInstalled) {
