@@ -1,5 +1,9 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { SummaryPart } from "./types.ts";
+
+export type SummaryPart = {
+  title: string;
+  body: string;
+};
 
 function parseSummaryPart(text: string): SummaryPart | undefined {
   const match = /^\s*\*\*([^\n]+?)\*\*[ \t]*(?:\r?\n(?:\r?\n)?([\s\S]*))?\s*$/.exec(text);

@@ -12,51 +12,76 @@ import {
   type MarkdownOptions,
   type TUI,
 } from "@earendil-works/pi-tui";
-import type { CompactThinking } from "./compact-thinking.ts";
+import type { ActiveThinking, CompactThinking } from "./compact-thinking.ts";
 import { config } from "./config.ts";
 import { formatThoughtDuration, ThinkingPreview } from "./preview.ts";
 import {
   getLatestOpenAiSummary,
   isOpenAiResponsesMessage,
   parseLatestStreamingSummary,
+  type SummaryPart,
 } from "./summaries.ts";
-import type {
-  ActiveThinking,
-  MarkdownTransformer,
-  MessageComponentInternals,
-  PatchedPrototype,
-  SummaryPart,
-} from "./types.ts";
 
 const DUMMY_WIDGET_ID = "compact-thinking-render-dummy";
 
-export interface RenderOptions {
+type MarkdownTransformContext = {
+  messageType: string;
+  isStreaming: boolean;
+  availableWidth: number;
+};
+
+type MarkdownTransformer = (
+  markdown: string,
+  context: MarkdownTransformContext,
+) => string | undefined;
+
+type MessageComponentInternals = {
+  contentContainer: {
+    clear(): void;
+    addChild(component: Component): void;
+  };
+  hideThinkingBlock: boolean;
+  markdownTheme: ConstructorParameters<typeof Markdown>[3];
+  hiddenThinkingLabel: string;
+  outputPad: number;
+  isStreaming?: boolean;
+  markdownTransformers?: readonly MarkdownTransformer[];
+  lastMessage?: AssistantMessage;
+  hasToolCalls: boolean;
+  updateContent(message: AssistantMessage, isStreaming?: boolean): void;
+};
+
+type PatchedPrototype = typeof AssistantMessageComponent.prototype & {
+  updateContent(message: AssistantMessage, isStreaming?: boolean): void;
+};
+
+type RenderOptions = {
   activeThinking?: ActiveThinking;
   theme?: Theme;
   animationFrame: number;
   isStreaming: boolean;
-}
+};
 
-interface ThinkingHeadingContext {
+type ThinkingHeadingContext = {
   activeThinking: ActiveThinking | undefined;
   completedMs: number | undefined;
   isActive: boolean;
   latestSummary: SummaryPart | undefined;
   hiddenThinkingLabel: string;
   theme: Theme | undefined;
-}
+};
 
-interface ActiveThinkingText {
+type ActiveThinkingText = {
   text: Text;
   headingContext: ThinkingHeadingContext;
-}
+};
 
-interface ThinkingRun {
+type ThinkingRun = {
   startIndex: number;
   endIndex: number;
   thinkingBlocks: string[];
   latestSummary?: SummaryPart;
-}
+};
 
 type AssistantContent = AssistantMessage["content"][number];
 

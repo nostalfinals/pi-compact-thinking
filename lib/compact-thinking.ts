@@ -6,15 +6,20 @@ import {
   type SessionEntry,
 } from "@earendil-works/pi-coding-agent";
 import { ThinkingRenderer } from "./renderer.ts";
-import type { ActiveThinking } from "./types.ts";
+
+export type ActiveThinking = {
+  messageTimestamp: number;
+  contentIndex: number;
+  startedAt: number;
+};
 
 const DURATION_ENTRY_TYPE = "compact-thinking-duration";
 
-interface ThinkingDurationData {
+type ThinkingDurationData = {
   messageTimestamp: number;
   contentIndex: number;
   durationMs: number;
-}
+};
 
 export class CompactThinking {
   private readonly thinkingDurations = new Map<number, Map<number, number>>();
