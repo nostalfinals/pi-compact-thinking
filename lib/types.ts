@@ -30,7 +30,7 @@ export type MarkdownTransformer = (
   context: MarkdownTransformContext,
 ) => string | undefined;
 
-export interface AssistantInternals {
+export interface MessageComponentInternals {
   contentContainer: {
     clear(): void;
     addChild(component: Component): void;

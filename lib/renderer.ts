@@ -11,8 +11,8 @@ import {
 } from "./summaries.ts";
 import type {
   ActiveThinking,
-  AssistantInternals,
   MarkdownTransformer,
+  MessageComponentInternals,
   SummaryPart,
 } from "./types.ts";
 
@@ -26,22 +26,26 @@ export interface RenderOptions {
 interface ThinkingRun {
   startIndex: number;
   endIndex: number;
-  blocks: string[];
+  thinkingBlocks: string[];
   latestSummary?: SummaryPart;
 }
 
 type AssistantContent = AssistantMessage["content"][number];
 
 function getAssistantMarkdownOptions(
-  self: AssistantInternals,
+  self: MessageComponentInternals,
   isStreaming: boolean,
 ): MarkdownOptions | undefined {
   const transformers = self.markdownTransformers;
-  if (!transformers || transformers.length === 0) return undefined;
+
+  if (!transformers || transformers.length === 0) {
+    return undefined;
+  }
 
   return {
-    transform(markdown: string, availableWidth: number) {
+    transform(markdown: string, availableWidth: number): string {
       let transformedMarkdown = markdown;
+
       for (const transformer of transformers) {
         try {
           const transformed = transformer(transformedMarkdown, {
@@ -49,6 +53,7 @@ function getAssistantMarkdownOptions(
             isStreaming,
             availableWidth,
           } satisfies Parameters<MarkdownTransformer>[1]);
+
           if (typeof transformed === "string") {
             transformedMarkdown = transformed;
           }
@@ -56,24 +61,33 @@ function getAssistantMarkdownOptions(
           // One broken transformer must not prevent the remaining Markdown from rendering.
         }
       }
+
       return transformedMarkdown;
     },
   };
 }
 
-function hasVisibleContent(content: AssistantContent) {
+function hasVisibleContent(content: AssistantContent): boolean {
   return (
     (content.type === "text" && Boolean(content.text.trim())) ||
     (content.type === "thinking" && Boolean(content.thinking.trim()))
   );
 }
 
-function styleThinkingText(theme: Theme | undefined, text: string) {
-  return theme ? theme.italic(theme.fg("thinkingText", text)) : text;
+function styleThinkingText(theme: Theme | undefined, text: string): string {
+  if (!theme) {
+    return text;
+  }
+
+  return theme.italic(theme.fg("thinkingText", text));
 }
 
-function styleSummaryTitle(theme: Theme | undefined, text: string) {
-  return theme ? theme.italic(theme.bold(theme.fg("thinkingText", text))) : text;
+function styleSummaryTitle(theme: Theme | undefined, text: string): string {
+  if (!theme) {
+    return text;
+  }
+
+  return theme.italic(theme.bold(theme.fg("thinkingText", text)));
 }
 
 function animateText(
@@ -81,11 +95,16 @@ function animateText(
   style: (value: string) => string,
   theme: Theme | undefined,
   frame: number,
-) {
-  if (!theme) return style(text);
+): string {
+  if (!theme) {
+    return style(text);
+  }
 
   const characters = Array.from(text);
-  if (characters.length === 0) return "";
+
+  if (characters.length === 0) {
+    return "";
+  }
 
   const highlightWidth = Math.max(1, Math.min(5, Math.ceil(characters.length * 0.28)));
   const start = (frame % (characters.length + highlightWidth)) - highlightWidth;
@@ -96,11 +115,13 @@ function animateText(
     .join("");
   const after = characters.slice(Math.max(0, end)).join("");
 
-  return (
-    style(before) +
-    (highlighted ? theme.italic(theme.bold(theme.fg("text", highlighted))) : "") +
-    style(after)
-  );
+  let styledHighlight = "";
+
+  if (highlighted) {
+    styledHighlight = theme.italic(theme.bold(theme.fg("text", highlighted)));
+  }
+
+  return style(before) + styledHighlight + style(after);
 }
 
 function collectThinkingRun(
@@ -108,45 +129,61 @@ function collectThinkingRun(
   startIndex: number,
   activeThinking: ActiveThinking | undefined,
 ): ThinkingRun {
-  const blocks: string[] = [];
+  const thinkingBlocks: string[] = [];
   let latestSummary: SummaryPart | undefined;
   let index = startIndex;
 
   for (; index < message.content.length; index++) {
     const content = message.content[index];
-    if (content.type !== "thinking") break;
+
+    if (content.type !== "thinking") {
+      break;
+    }
 
     const thinking = content.thinking.trim();
-    if (!thinking) continue;
-    blocks.push(thinking);
 
-    if (!config.useSummaryTitlesAsThinkingTitle || !isOpenAiResponsesMessage(message)) continue;
+    if (!thinking) {
+      continue;
+    }
+
+    thinkingBlocks.push(thinking);
+
+    if (!config.useSummaryTitlesAsThinkingTitle || !isOpenAiResponsesMessage(message)) {
+      continue;
+    }
 
     const isActive =
       activeThinking?.messageTimestamp === message.timestamp &&
       activeThinking.contentIndex === index;
-    latestSummary = isActive
-      ? (parseLatestStreamingSummary(thinking) ??
-        getLatestOpenAiSummary(content.thinkingSignature) ??
-        latestSummary)
-      : (getLatestOpenAiSummary(content.thinkingSignature) ??
+
+    if (isActive) {
+      latestSummary =
         parseLatestStreamingSummary(thinking) ??
-        latestSummary);
+        getLatestOpenAiSummary(content.thinkingSignature) ??
+        latestSummary;
+    } else {
+      latestSummary =
+        getLatestOpenAiSummary(content.thinkingSignature) ??
+        parseLatestStreamingSummary(thinking) ??
+        latestSummary;
+    }
   }
 
   return {
     startIndex,
     endIndex: index - 1,
-    blocks,
+    thinkingBlocks,
     latestSummary,
   };
 }
 
 function renderText(
-  self: AssistantInternals,
+  self: MessageComponentInternals,
   content: Extract<AssistantContent, { type: "text" }>,
   isStreaming: boolean,
 ) {
+  const markdownOptions = getAssistantMarkdownOptions(self, isStreaming);
+
   self.contentContainer.addChild(
     new Markdown(
       content.text.trim(),
@@ -154,73 +191,89 @@ function renderText(
       0,
       self.markdownTheme,
       undefined,
-      getAssistantMarkdownOptions(self, isStreaming),
+      markdownOptions,
     ),
   );
 }
 
 function renderThinkingRun(
-  self: AssistantInternals,
+  self: MessageComponentInternals,
   compactThinking: CompactThinking,
   message: AssistantMessage,
-  run: ThinkingRun,
+  thinkingRun: ThinkingRun,
   options: RenderOptions,
 ) {
   const { activeThinking, animationFrame, theme } = options;
-  const active =
+  const isActive =
     activeThinking?.messageTimestamp === message.timestamp &&
-    activeThinking.contentIndex >= run.startIndex &&
-    activeThinking.contentIndex <= run.endIndex;
+    activeThinking.contentIndex >= thinkingRun.startIndex &&
+    activeThinking.contentIndex <= thinkingRun.endIndex;
 
-  if (run.blocks.length === 0 && !active) return;
-  if (message.content.slice(0, run.startIndex).some(hasVisibleContent)) {
+  if (thinkingRun.thinkingBlocks.length === 0 && !isActive) {
+    return;
+  }
+
+  const hasVisibleContentBefore = message.content
+    .slice(0, thinkingRun.startIndex)
+    .some(hasVisibleContent);
+
+  if (hasVisibleContentBefore) {
     self.contentContainer.addChild(new Spacer(1));
   }
 
   const elapsedMs = activeThinking ? Math.max(1, Date.now() - activeThinking.startedAt) : undefined;
   const completedMs = compactThinking.findDurationsInRange(
     message.timestamp,
-    run.startIndex,
-    run.endIndex,
+    thinkingRun.startIndex,
+    thinkingRun.endIndex,
   );
-  const durationMs = active ? elapsedMs : completedMs;
+  const durationMs = isActive ? elapsedMs : completedMs;
   const durationText = durationMs === undefined ? undefined : formatThoughtDuration(durationMs);
-  const thinkingStyle = (text: string) => styleThinkingText(theme, text);
+  const thinkingStyle = (text: string): string => styleThinkingText(theme, text);
+  const durationSuffix = durationText ? thinkingStyle(` · ${durationText}`) : "";
 
   let heading: string;
-  if (active && run.latestSummary) {
-    heading =
-      animateText(
-        run.latestSummary.title,
-        (text) => styleSummaryTitle(theme, text),
-        theme,
-        animationFrame,
-      ) + (durationText ? thinkingStyle(` · ${durationText}`) : "");
-  } else if (active) {
-    heading =
-      animateText(self.hiddenThinkingLabel || "Thinking...", thinkingStyle, theme, animationFrame) +
-      (durationText ? thinkingStyle(` · ${durationText}`) : "");
-  } else {
-    heading = thinkingStyle(
-      durationText ? `Thought for ${durationText}` : self.hiddenThinkingLabel || "Thinking...",
+
+  if (isActive && thinkingRun.latestSummary) {
+    const animatedTitle = animateText(
+      thinkingRun.latestSummary.title,
+      (text): string => styleSummaryTitle(theme, text),
+      theme,
+      animationFrame,
     );
+    heading = animatedTitle + durationSuffix;
+  } else if (isActive) {
+    const label = self.hiddenThinkingLabel || "Thinking...";
+    const animatedLabel = animateText(label, thinkingStyle, theme, animationFrame);
+    heading = animatedLabel + durationSuffix;
+  } else {
+    const label = durationText
+      ? `Thought for ${durationText}`
+      : self.hiddenThinkingLabel || "Thinking...";
+    heading = thinkingStyle(label);
   }
+
   self.contentContainer.addChild(new Text(heading, self.outputPad, 0));
 
-  const previewSource = run.latestSummary?.body ?? run.blocks.join("\n\n");
+  const previewSource = thinkingRun.latestSummary?.body ?? thinkingRun.thinkingBlocks.join("\n\n");
+
   if (config.previewLines > 0 && previewSource.trim()) {
     self.contentContainer.addChild(
       new StrictThinkingPreview(previewSource.trim(), self.outputPad, thinkingStyle),
     );
   }
 
-  if (message.content.slice(run.endIndex + 1).some(hasVisibleContent)) {
+  const hasVisibleContentAfter = message.content
+    .slice(thinkingRun.endIndex + 1)
+    .some(hasVisibleContent);
+
+  if (hasVisibleContentAfter) {
     self.contentContainer.addChild(new Spacer(1));
   }
 }
 
 function renderStopReason(
-  self: AssistantInternals,
+  self: MessageComponentInternals,
   message: AssistantMessage,
   theme: Theme | undefined,
   hasToolCalls: boolean,
@@ -231,20 +284,22 @@ function renderStopReason(
     errorMessage =
       "Error: Model stopped because it reached the maximum output token limit. The response may be incomplete.";
   } else if (!hasToolCalls && message.stopReason === "aborted") {
-    const reason =
+    errorMessage =
       message.errorMessage && message.errorMessage !== "Request was aborted"
         ? message.errorMessage
         : "Operation aborted";
-    errorMessage = reason;
   } else if (!hasToolCalls && message.stopReason === "error") {
     errorMessage = `Error: ${message.errorMessage || "Unknown error"}`;
   }
 
-  if (!errorMessage) return;
+  if (!errorMessage) {
+    return;
+  }
+
+  const styledError = theme ? theme.fg("error", errorMessage) : errorMessage;
+
   self.contentContainer.addChild(new Spacer(1));
-  self.contentContainer.addChild(
-    new Text(theme ? theme.fg("error", errorMessage) : errorMessage, self.outputPad, 0),
-  );
+  self.contentContainer.addChild(new Text(styledError, self.outputPad, 0));
 }
 
 export function renderAssistantMessage(
@@ -253,13 +308,15 @@ export function renderAssistantMessage(
   message: AssistantMessage,
   options: RenderOptions,
 ) {
-  const self = component as unknown as AssistantInternals;
+  const self = component as unknown as MessageComponentInternals;
   self.contentContainer.clear();
 
   const hasActiveThinking =
     options.activeThinking?.messageTimestamp === message.timestamp &&
-    message.content.some((content) => content.type === "thinking");
-  if (hasActiveThinking || message.content.some(hasVisibleContent)) {
+    message.content.some((content): boolean => content.type === "thinking");
+  const shouldAddLeadingSpace = hasActiveThinking || message.content.some(hasVisibleContent);
+
+  if (shouldAddLeadingSpace) {
     self.contentContainer.addChild(new Spacer(1));
   }
 
@@ -270,14 +327,18 @@ export function renderAssistantMessage(
       renderText(self, content, options.isStreaming);
       continue;
     }
-    if (content.type !== "thinking") continue;
 
-    const run = collectThinkingRun(message, index, options.activeThinking);
-    renderThinkingRun(self, compactThinking, message, run, options);
-    index = run.endIndex;
+    if (content.type !== "thinking") {
+      continue;
+    }
+
+    const thinkingRun = collectThinkingRun(message, index, options.activeThinking);
+    renderThinkingRun(self, compactThinking, message, thinkingRun, options);
+    index = thinkingRun.endIndex;
   }
 
-  const hasToolCalls = message.content.some((content) => content.type === "toolCall");
+  const hasToolCalls = message.content.some((content): boolean => content.type === "toolCall");
+
   self.hasToolCalls = hasToolCalls;
   renderStopReason(self, message, options.theme, hasToolCalls);
 }

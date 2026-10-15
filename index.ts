@@ -4,11 +4,11 @@ import {
   type ExtensionAPI,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import type { TUI } from "@earendil-works/pi-tui";
+import type { Component, TUI } from "@earendil-works/pi-tui";
 import { config } from "./lib/config.ts";
 import { CompactThinking } from "./lib/compact-thinking.ts";
 import { renderAssistantMessage } from "./lib/renderer.ts";
-import type { ActiveThinking, AssistantInternals, PatchedPrototype } from "./lib/types.ts";
+import type { ActiveThinking, MessageComponentInternals, PatchedPrototype } from "./lib/types.ts";
 
 const WIDGET_ID = "compact-thinking-render-loop";
 
@@ -40,7 +40,7 @@ export default function compactThinking(pi: ExtensionAPI) {
     }
 
     for (const component of renderedComponents) {
-      const self = component as unknown as AssistantInternals;
+      const self = component as unknown as MessageComponentInternals;
       if (self.lastMessage) self.updateContent(self.lastMessage);
     }
   }
@@ -51,7 +51,7 @@ export default function compactThinking(pi: ExtensionAPI) {
     isStreaming?: boolean,
   ) {
     const component = this as AssistantMessageComponent;
-    const self = this as unknown as AssistantInternals;
+    const self = this as unknown as MessageComponentInternals;
     const currentIsStreaming = isStreaming ?? self.isStreaming ?? false;
     self.isStreaming = currentIsStreaming;
     self.lastMessage = message;
@@ -93,7 +93,7 @@ export default function compactThinking(pi: ExtensionAPI) {
     // summary delta before seeing the animation.
     if (latestComponent && latestComponentTimestamp === message.timestamp) {
       streamingComponents.add(latestComponent);
-      const self = latestComponent as unknown as AssistantInternals;
+      const self = latestComponent as unknown as MessageComponentInternals;
       self.updateContent(message);
       activeTui?.requestRender();
     }
@@ -102,7 +102,7 @@ export default function compactThinking(pi: ExtensionAPI) {
     animationTimer = setInterval(() => {
       animationFrame++;
       for (const component of streamingComponents) {
-        const self = component as unknown as AssistantInternals;
+        const self = component as unknown as MessageComponentInternals;
         if (self.lastMessage) self.updateContent(self.lastMessage);
       }
       activeTui?.requestRender();
@@ -122,7 +122,7 @@ export default function compactThinking(pi: ExtensionAPI) {
     const components = [...streamingComponents];
     streamingComponents.clear();
     for (const component of components) {
-      const self = component as unknown as AssistantInternals;
+      const self = component as unknown as MessageComponentInternals;
       if (self.lastMessage) self.updateContent(self.lastMessage);
     }
     activeTui?.requestRender();
@@ -177,9 +177,9 @@ export default function compactThinking(pi: ExtensionAPI) {
 
     // An empty widget gives the animation loop access to requestRender without
     // enabling terminal mouse reporting or intercepting native scrollback input.
-    ctx.ui.setWidget(WIDGET_ID, (tui) => {
+    ctx.ui.setWidget(WIDGET_ID, (tui): Component => {
       activeTui = tui;
-      return { render: () => [], invalidate() {} };
+      return { render: (): string[] => [], invalidate() {} };
     });
 
     // On resume, Pi may construct the chat before session_start is emitted.

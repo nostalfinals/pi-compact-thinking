@@ -22,7 +22,7 @@ export function parseLatestStreamingSummary(text: string): SummaryPart | undefin
   };
 }
 
-export function isOpenAiResponsesMessage(message: AssistantMessage) {
+export function isOpenAiResponsesMessage(message: AssistantMessage): boolean {
   return (
     message.api === "openai-responses" ||
     message.api === "openai-codex-responses" ||

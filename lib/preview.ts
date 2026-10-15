@@ -1,7 +1,7 @@
 import { getKeybindings, Text, type Component } from "@earendil-works/pi-tui";
 import { config } from "./config.ts";
 
-export function formatThoughtDuration(durationMs: number) {
+export function formatThoughtDuration(durationMs: number): string {
   if (durationMs < 1_000) {
     return `${Math.max(1, Math.round(durationMs))}ms`;
   }
@@ -13,7 +13,7 @@ export function formatThoughtDuration(durationMs: number) {
   return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
 }
 
-export function getThinkingToggleHint() {
+export function getThinkingToggleHint(): string | undefined {
   const keys = getKeybindings().getKeys("app.thinking.toggle");
   return keys.length > 0 ? `${keys.join("/")} to expand` : undefined;
 }
@@ -34,7 +34,7 @@ export class StrictThinkingPreview implements Component {
     this.style = style;
   }
 
-  render(width: number) {
+  render(width: number): string[] {
     // Check cache
     if (this.cachedLines && this.cachedText === this.text && this.cachedWidth === width) {
       return this.cachedLines;
