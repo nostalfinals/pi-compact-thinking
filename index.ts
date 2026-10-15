@@ -4,58 +4,13 @@ import {
   type ExtensionAPI,
   type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { Markdown, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
+import type { TUI } from "@earendil-works/pi-tui";
 import { config } from "./lib/config.ts";
 import { CompactThinking } from "./lib/compact-thinking.ts";
-import { formatThoughtDuration, StrictThinkingPreview } from "./lib/preview.ts";
-import {
-  getLatestOpenAiSummary,
-  isOpenAiResponsesMessage,
-  parseLatestStreamingSummary,
-} from "./lib/summaries.ts";
-import type {
-  ActiveThinking,
-  AssistantInternals,
-  MarkdownTransformer,
-  PatchedPrototype,
-  SummaryPart,
-} from "./lib/types.ts";
+import { renderAssistantMessage } from "./lib/renderer.ts";
+import type { ActiveThinking, AssistantInternals, PatchedPrototype } from "./lib/types.ts";
 
 const WIDGET_ID = "compact-thinking-render-loop";
-type MarkdownOptions = NonNullable<ConstructorParameters<typeof Markdown>[5]>;
-
-function getAssistantMarkdownOptions(
-  self: AssistantInternals,
-  isStreaming: boolean,
-): MarkdownOptions | undefined {
-  const transformers = self.markdownTransformers;
-  if (!transformers || transformers.length === 0) return undefined;
-
-  // `markdownTransformers` and Markdown's `transform` option are internal Pi
-  // APIs. Keep this optional so the extension remains compatible with Pi
-  // versions that predate the transformer pipeline.
-  return {
-    transform(markdown: string, availableWidth: number) {
-      let transformedMarkdown = markdown;
-      for (const transformer of transformers) {
-        try {
-          const transformed = transformer(transformedMarkdown, {
-            messageType: "assistant",
-            isStreaming,
-            availableWidth,
-          } satisfies Parameters<MarkdownTransformer>[1]);
-          if (typeof transformed === "string") {
-            transformedMarkdown = transformed;
-          }
-        } catch {
-          // Match Pi's behavior: one broken transformer must not prevent the
-          // remaining Markdown from rendering.
-        }
-      }
-      return transformedMarkdown;
-    },
-  } as unknown as MarkdownOptions;
-}
 
 export default function compactThinking(pi: ExtensionAPI) {
   const compactThinking = new CompactThinking(pi);
@@ -90,47 +45,6 @@ export default function compactThinking(pi: ExtensionAPI) {
     }
   }
 
-  function thinkingStyle(text: string) {
-    return activeTheme ? activeTheme.italic(activeTheme.fg("thinkingText", text)) : text;
-  }
-
-  function summaryTitleStyle(text: string) {
-    return activeTheme
-      ? activeTheme.italic(activeTheme.bold(activeTheme.fg("thinkingText", text)))
-      : text;
-  }
-
-  function animatedText(text: string, baseStyle: (value: string) => string, animate: boolean) {
-    if (!animate || !activeTheme) return baseStyle(text);
-
-    const characters = Array.from(text);
-    if (characters.length === 0) return "";
-    const highlightWidth = Math.max(1, Math.min(5, Math.ceil(characters.length * 0.28)));
-    const start = (animationFrame % (characters.length + highlightWidth)) - highlightWidth;
-    const end = start + highlightWidth;
-    const before = characters.slice(0, Math.max(0, start)).join("");
-    const highlighted = characters
-      .slice(Math.max(0, start), Math.min(characters.length, end))
-      .join("");
-    const after = characters.slice(Math.max(0, end)).join("");
-
-    return (
-      baseStyle(before) +
-      (highlighted
-        ? activeTheme.italic(activeTheme.bold(activeTheme.fg("text", highlighted)))
-        : "") +
-      baseStyle(after)
-    );
-  }
-
-  function isActiveRun(message: AssistantMessage, startIndex: number, endIndex: number) {
-    return (
-      activeThinking?.messageTimestamp === message.timestamp &&
-      activeThinking.contentIndex >= startIndex &&
-      activeThinking.contentIndex <= endIndex
-    );
-  }
-
   function patchedUpdateContent(
     this: AssistantMessageComponent,
     message: AssistantMessage,
@@ -156,177 +70,12 @@ export default function compactThinking(pi: ExtensionAPI) {
       streamingComponents.add(component);
     }
 
-    self.contentContainer.clear();
-    const hasActiveThinking =
-      activeThinking?.messageTimestamp === message.timestamp &&
-      message.content.some((content) => content.type === "thinking");
-    const hasVisibleContent =
-      hasActiveThinking ||
-      message.content.some(
-        (content) =>
-          (content.type === "text" && content.text.trim()) ||
-          (content.type === "thinking" && content.thinking.trim()),
-      );
-    // Reserve Pi's normal leading spacer even before the first thinking token.
-    // This prevents the placeholder heading from jumping down one row when
-    // summary/body content begins streaming.
-    if (hasVisibleContent) self.contentContainer.addChild(new Spacer(1));
-
-    for (let i = 0; i < message.content.length; i++) {
-      const content = message.content[i];
-
-      if (content.type === "text" && content.text.trim()) {
-        self.contentContainer.addChild(
-          new Markdown(
-            content.text.trim(),
-            self.outputPad,
-            0,
-            self.markdownTheme,
-            undefined,
-            getAssistantMarkdownOptions(self, currentIsStreaming),
-          ),
-        );
-        continue;
-      }
-
-      if (content.type !== "thinking") continue;
-
-      const runStartIndex = i;
-      const hasVisibleContentBefore = message.content
-        .slice(0, runStartIndex)
-        .some(
-          (previous) =>
-            (previous.type === "text" && previous.text.trim()) ||
-            (previous.type === "thinking" && previous.thinking.trim()),
-        );
-      const thinkingBlocks: string[] = [];
-      let latestSummary: SummaryPart | undefined;
-      for (; i < message.content.length; i++) {
-        const thinkingContent = message.content[i];
-        if (thinkingContent.type !== "thinking") break;
-        const thinking = thinkingContent.thinking.trim();
-        if (!thinking) continue;
-        thinkingBlocks.push(thinking);
-
-        if (config.useSummaryTitlesAsThinkingTitle && isOpenAiResponsesMessage(message)) {
-          const contentIsActive =
-            activeThinking?.messageTimestamp === message.timestamp &&
-            activeThinking.contentIndex === i;
-          // During streaming, thinkingSignature may contain only the previously
-          // completed summary parts. Prefer the live text so a newly arriving
-          // title immediately replaces the old one instead of appearing in its
-          // preview body. Once complete, the structured signature is canonical.
-          latestSummary = contentIsActive
-            ? (parseLatestStreamingSummary(thinking) ??
-              getLatestOpenAiSummary(thinkingContent.thinkingSignature) ??
-              latestSummary)
-            : (getLatestOpenAiSummary(thinkingContent.thinkingSignature) ??
-              parseLatestStreamingSummary(thinking) ??
-              latestSummary);
-        }
-      }
-      const runEndIndex = i - 1;
-      i--;
-      const active = isActiveRun(message, runStartIndex, runEndIndex);
-      // OpenAI can spend several seconds reasoning before it emits the first
-      // summary token. Keep an empty active block visible as animated
-      // "Thinking..." during that otherwise silent interval.
-      if (thinkingBlocks.length === 0 && !active) continue;
-      if (hasVisibleContentBefore) {
-        self.contentContainer.addChild(new Spacer(1));
-      }
-
-      const elapsedMs = activeThinking
-        ? Math.max(1, Date.now() - activeThinking.startedAt)
-        : undefined;
-      const completedMs = compactThinking.findDurationsInRange(
-        message.timestamp,
-        runStartIndex,
-        runEndIndex,
-      );
-      const durationMs = active ? elapsedMs : completedMs;
-      const durationText = durationMs === undefined ? undefined : formatThoughtDuration(durationMs);
-
-      let heading: string;
-      if (active && latestSummary) {
-        heading =
-          animatedText(latestSummary.title, summaryTitleStyle, true) +
-          (durationText ? thinkingStyle(` · ${durationText}`) : "");
-      } else if (active) {
-        const label = self.hiddenThinkingLabel || "Thinking...";
-        heading =
-          animatedText(label, thinkingStyle, true) +
-          (durationText ? thinkingStyle(` · ${durationText}`) : "");
-      } else {
-        // Completed compact blocks use one provider-independent status line.
-        heading = thinkingStyle(
-          durationText ? `Thought for ${durationText}` : self.hiddenThinkingLabel || "Thinking...",
-        );
-      }
-      self.contentContainer.addChild(new Text(heading, self.outputPad, 0));
-
-      const previewSource = latestSummary?.body ?? thinkingBlocks.join("\n\n");
-      if (config.previewLines > 0 && previewSource.trim()) {
-        self.contentContainer.addChild(
-          new StrictThinkingPreview(previewSource.trim(), self.outputPad, thinkingStyle),
-        );
-      }
-
-      const hasVisibleContentAfter = message.content
-        .slice(i + 1)
-        .some(
-          (next) =>
-            (next.type === "text" && next.text.trim()) ||
-            (next.type === "thinking" && next.thinking.trim()),
-        );
-      if (hasVisibleContentAfter) self.contentContainer.addChild(new Spacer(1));
-    }
-
-    const hasToolCalls = message.content.some((content) => content.type === "toolCall");
-    self.hasToolCalls = hasToolCalls;
-
-    if (message.stopReason === "length") {
-      self.contentContainer.addChild(new Spacer(1));
-      self.contentContainer.addChild(
-        new Text(
-          activeTheme
-            ? activeTheme.fg(
-                "error",
-                "Error: Model stopped because it reached the maximum output token limit. The response may be incomplete.",
-              )
-            : "Error: Model stopped because it reached the maximum output token limit. The response may be incomplete.",
-          self.outputPad,
-          0,
-        ),
-      );
-    } else if (!hasToolCalls) {
-      if (message.stopReason === "aborted") {
-        const abortMessage =
-          message.errorMessage && message.errorMessage !== "Request was aborted"
-            ? message.errorMessage
-            : "Operation aborted";
-        self.contentContainer.addChild(new Spacer(1));
-        self.contentContainer.addChild(
-          new Text(
-            activeTheme ? activeTheme.fg("error", abortMessage) : abortMessage,
-            self.outputPad,
-            0,
-          ),
-        );
-      } else if (message.stopReason === "error") {
-        const errorMessage = message.errorMessage || "Unknown error";
-        self.contentContainer.addChild(new Spacer(1));
-        self.contentContainer.addChild(
-          new Text(
-            activeTheme
-              ? activeTheme.fg("error", `Error: ${errorMessage}`)
-              : `Error: ${errorMessage}`,
-            self.outputPad,
-            0,
-          ),
-        );
-      }
-    }
+    renderAssistantMessage(component, compactThinking, message, {
+      activeThinking,
+      theme: activeTheme,
+      animationFrame,
+      isStreaming: currentIsStreaming,
+    });
   }
 
   function startThinking(message: AssistantMessage, contentIndex: number) {
