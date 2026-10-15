@@ -401,7 +401,7 @@ function renderText(
   );
 }
 
-function renderThinkingRun(
+function renderThinking(
   self: MessageComponentInternals,
   compactThinking: CompactThinking,
   message: AssistantMessage,
@@ -536,7 +536,7 @@ export function renderAssistantMessage(
     }
 
     const thinkingRun = collectThinkingRun(message, index, options.activeThinking);
-    const renderedThinkingText = renderThinkingRun(
+    const renderedThinkingText = renderThinking(
       self,
       compactThinking,
       message,

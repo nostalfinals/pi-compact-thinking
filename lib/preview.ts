@@ -19,14 +19,14 @@ export function getThinkingToggleHint(): string | undefined {
 }
 
 export class ThinkingPreview implements Component {
-  private text: string;
+  private readonly text: string;
   private padding: number;
   private style: (text: string) => string;
 
-  // Cache for rendered output
-  private cachedText?: string;
-  private cachedWidth?: number;
-  private cachedLines?: string[];
+  private cache?: {
+    width: number;
+    lines: string[];
+  };
 
   constructor(text: string, padding: number, style: (text: string) => string) {
     this.text = text;
@@ -35,9 +35,8 @@ export class ThinkingPreview implements Component {
   }
 
   render(width: number): string[] {
-    // Check cache
-    if (this.cachedLines && this.cachedText === this.text && this.cachedWidth === width) {
-      return this.cachedLines;
+    if (this.cache?.width === width) {
+      return this.cache.lines;
     }
 
     const lines = new Text(this.style(this.text), this.padding, 0).render(width);
@@ -53,18 +52,12 @@ export class ThinkingPreview implements Component {
       result = [...hintLines, ...lines.slice(-config.previewLines)];
     }
 
-    // Update cache
-    this.cachedText = this.text;
-    this.cachedWidth = width;
-    this.cachedLines = result;
+    this.cache = { width, lines: result };
 
     return result;
   }
 
   invalidate() {
-    // Clear cache
-    this.cachedText = undefined;
-    this.cachedWidth = undefined;
-    this.cachedLines = undefined;
+    this.cache = undefined;
   }
 }
