@@ -1,12 +1,12 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { CompactThinkingConfig } from "./types.ts";
+
+type CompactThinkingConfig = {
+  useSummaryTitlesAsThinkingTitle: boolean;
+  previewLines: number;
+  animationIntervalMs: number;
+};
 
 const DEFAULT_CONFIG: CompactThinkingConfig = {
   useSummaryTitlesAsThinkingTitle: true,
@@ -14,8 +14,7 @@ const DEFAULT_CONFIG: CompactThinkingConfig = {
   animationIntervalMs: 90,
 };
 
-const AGENT_DIR =
-  process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 
 function loadConfig(): CompactThinkingConfig {
   const path = join(AGENT_DIR, "compact-thinking.json");
@@ -26,6 +25,7 @@ function loadConfig(): CompactThinkingConfig {
   }
 
   const value = JSON.parse(readFileSync(path, "utf8")) as Partial<CompactThinkingConfig>;
+
   if (
     typeof value.useSummaryTitlesAsThinkingTitle !== "boolean" ||
     !Number.isInteger(value.previewLines) ||
@@ -35,6 +35,7 @@ function loadConfig(): CompactThinkingConfig {
   ) {
     throw new Error(`Invalid compact-thinking configuration: ${path}`);
   }
+
   return value as CompactThinkingConfig;
 }
 

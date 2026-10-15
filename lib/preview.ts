@@ -1,7 +1,7 @@
 import { getKeybindings, Text, type Component } from "@earendil-works/pi-tui";
 import { config } from "./config.ts";
 
-export function formatThoughtDuration(durationMs: number) {
+export function formatThoughtDuration(durationMs: number): string {
   if (durationMs < 1_000) {
     return `${Math.max(1, Math.round(durationMs))}ms`;
   }
@@ -13,35 +13,30 @@ export function formatThoughtDuration(durationMs: number) {
   return seconds === 0 ? `${minutes}m` : `${minutes}m ${seconds}s`;
 }
 
-export function getThinkingToggleHint() {
+export function getThinkingToggleHint(): string | undefined {
   const keys = getKeybindings().getKeys("app.thinking.toggle");
   return keys.length > 0 ? `${keys.join("/")} to expand` : undefined;
 }
 
-export class StrictThinkingPreview implements Component {
-  private text: string;
+export class ThinkingPreview implements Component {
+  private readonly text: string;
   private padding: number;
   private style: (text: string) => string;
 
-  // Cache for rendered output
-  private cachedText?: string;
-  private cachedWidth?: number;
-  private cachedLines?: string[];
+  private cache?: {
+    width: number;
+    lines: string[];
+  };
 
-  constructor(
-    text: string,
-    padding: number,
-    style: (text: string) => string,
-  ) {
+  constructor(text: string, padding: number, style: (text: string) => string) {
     this.text = text;
     this.padding = padding;
     this.style = style;
   }
 
-  render(width: number) {
-    // Check cache
-    if (this.cachedLines && this.cachedText === this.text && this.cachedWidth === width) {
-      return this.cachedLines;
+  render(width: number): string[] {
+    if (this.cache?.width === width) {
+      return this.cache.lines;
     }
 
     const lines = new Text(this.style(this.text), this.padding, 0).render(width);
@@ -57,18 +52,12 @@ export class StrictThinkingPreview implements Component {
       result = [...hintLines, ...lines.slice(-config.previewLines)];
     }
 
-    // Update cache
-    this.cachedText = this.text;
-    this.cachedWidth = width;
-    this.cachedLines = result;
+    this.cache = { width, lines: result };
 
     return result;
   }
 
   invalidate() {
-    // Clear cache
-    this.cachedText = undefined;
-    this.cachedWidth = undefined;
-    this.cachedLines = undefined;
+    this.cache = undefined;
   }
 }
