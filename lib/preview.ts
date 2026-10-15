@@ -18,7 +18,7 @@ export function getThinkingToggleHint(): string | undefined {
   return keys.length > 0 ? `${keys.join("/")} to expand` : undefined;
 }
 
-export class StrictThinkingPreview implements Component {
+export class ThinkingPreview implements Component {
   private text: string;
   private padding: number;
   private style: (text: string) => string;
