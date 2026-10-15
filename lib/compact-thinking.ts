@@ -50,10 +50,6 @@ export class CompactThinking {
     });
   }
 
-  clearDurations() {
-    this.thinkingDurations.clear();
-  }
-
   loadDurationsFromHistory(entries: SessionEntry[]) {
     this.thinkingDurations.clear();
 
@@ -103,5 +99,9 @@ export class CompactThinking {
       Number.isFinite(candidate.durationMs) &&
       candidate.durationMs >= 1
     );
+  }
+
+  stop() {
+    this.thinkingDurations.clear();
   }
 }

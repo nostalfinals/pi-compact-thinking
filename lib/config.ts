@@ -1,9 +1,4 @@
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { CompactThinkingConfig } from "./types.ts";
@@ -14,8 +9,7 @@ const DEFAULT_CONFIG: CompactThinkingConfig = {
   animationIntervalMs: 90,
 };
 
-const AGENT_DIR =
-  process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 
 function loadConfig(): CompactThinkingConfig {
   const path = join(AGENT_DIR, "compact-thinking.json");

@@ -452,7 +452,7 @@ export default function compactThinking(pi: ExtensionAPI) {
     activeTheme = undefined;
     latestComponent = undefined;
     latestComponentTimestamp = undefined;
-    compactThinking.clearDurations();
+    compactThinking.stop();
     renderedComponents.clear();
     streamingComponents.clear();
     if (ctx.mode === "tui") ctx.ui.setWidget(WIDGET_ID, undefined);

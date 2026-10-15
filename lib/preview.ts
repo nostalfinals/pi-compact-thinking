@@ -28,11 +28,7 @@ export class StrictThinkingPreview implements Component {
   private cachedWidth?: number;
   private cachedLines?: string[];
 
-  constructor(
-    text: string,
-    padding: number,
-    style: (text: string) => string,
-  ) {
+  constructor(text: string, padding: number, style: (text: string) => string) {
     this.text = text;
     this.padding = padding;
     this.style = style;
