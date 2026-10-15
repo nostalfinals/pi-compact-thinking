@@ -34,13 +34,15 @@ The configuration file is created automatically the first time the extension loa
 {
   "useSummaryTitlesAsThinkingTitle": true,
   "previewLines": 3,
-  "animationIntervalMs": 90
+  "animationIntervalMs": 90,
+  "animationStyle": "solid"
 }
 ```
 
 - `useSummaryTitlesAsThinkingTitle`: For OpenAI models, uses the latest reasoning-summary heading as the live compact thinking title.
 - `previewLines`: Maximum number of rendered reasoning-preview lines to retain in `Thinking blocks: hidden` mode. Set to `0` to hide the preview.
 - `animationIntervalMs`: Interval, in milliseconds, between animation frames while the model is reasoning.
+- `animationStyle`: `solid` (default) or `gradient`, the style of the thinking animation.
 
 It is also recommended to set `hideThinkingBlock` to `true` in Pi's settings to enable compact thinking by default.
 

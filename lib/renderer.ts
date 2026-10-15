@@ -5,7 +5,10 @@ import {
   type Theme,
 } from "@earendil-works/pi-coding-agent";
 import {
+  colorToOklch,
   Markdown,
+  mixColors,
+  oklchColor,
   Spacer,
   Text,
   type Component,
@@ -13,7 +16,7 @@ import {
   type TUI,
 } from "@earendil-works/pi-tui";
 import type { ActiveThinking, CompactThinking } from "./compact-thinking.ts";
-import { config } from "./config.ts";
+import { config, type AnimationStyle } from "./config.ts";
 import { formatThoughtDuration, ThinkingPreview } from "./preview.ts";
 import {
   getLatestOpenAiSummary,
@@ -84,6 +87,13 @@ type ThinkingRun = {
 };
 
 type AssistantContent = AssistantMessage["content"][number];
+
+type TextAnimation = (
+  text: string,
+  theme: Theme | undefined,
+  frame: number,
+  bold: boolean,
+) => string;
 
 export class ThinkingRenderer {
   private readonly prototype = AssistantMessageComponent.prototype as PatchedPrototype;
@@ -301,7 +311,17 @@ function styleSummaryTitle(theme: Theme | undefined, text: string): string {
   return theme.italic(theme.bold(theme.fg("thinkingText", text)));
 }
 
-function animateText(text: string, theme: Theme | undefined, frame: number, bold: boolean): string {
+const GRADIENT_MIN_WAVELENGTH = 10;
+const GRADIENT_WAVELENGTH_RATIO = 0.5;
+const GRADIENT_SPEED = 1;
+const GRADIENT_LIGHTNESS_SHIFT = 0.06;
+
+function animateSolidText(
+  text: string,
+  theme: Theme | undefined,
+  frame: number,
+  bold: boolean,
+): string {
   const style = bold ? styleSummaryTitle : styleThinkingText;
 
   if (!theme) {
@@ -330,6 +350,59 @@ function animateText(text: string, theme: Theme | undefined, frame: number, bold
   }
 
   return style(theme, before) + styledHighlight + style(theme, after);
+}
+
+function positiveModulo(value: number, divisor: number): number {
+  return ((value % divisor) + divisor) % divisor;
+}
+
+function animateGradientText(
+  text: string,
+  theme: Theme | undefined,
+  frame: number,
+  bold: boolean,
+): string {
+  if (!theme) {
+    return text;
+  }
+
+  const characters = Array.from(text);
+  const wavelength = Math.max(
+    GRADIENT_MIN_WAVELENGTH,
+    Math.ceil(characters.length * GRADIENT_WAVELENGTH_RATIO),
+  );
+  const textColor = colorToOklch(theme.colors.text);
+  const thinkingColor = colorToOklch(theme.colors.thinkingText);
+  const lightnessDirection = theme.appearance === "dark" ? 1 : -1;
+  const highlightColor = oklchColor(
+    Math.max(0, Math.min(1, textColor.l + GRADIENT_LIGHTNESS_SHIFT * lightnessDirection)),
+    textColor.c,
+    textColor.h,
+  );
+  const lowlightColor = oklchColor(
+    Math.max(0, Math.min(1, thinkingColor.l - GRADIENT_LIGHTNESS_SHIFT * lightnessDirection)),
+    thinkingColor.c,
+    thinkingColor.h,
+  );
+
+  return characters
+    .map((character, index): string => {
+      const position = positiveModulo(index - frame * GRADIENT_SPEED, wavelength);
+      const phase = position / wavelength;
+      const amount = (1 - Math.cos(phase * Math.PI * 2)) / 2;
+      const color = mixColors(lowlightColor, highlightColor, amount, "oklch");
+      return theme.style(character, { fg: color, italic: true, bold });
+    })
+    .join("");
+}
+
+const textAnimations: Record<AnimationStyle, TextAnimation> = {
+  solid: animateSolidText,
+  gradient: animateGradientText,
+};
+
+function animateText(text: string, theme: Theme | undefined, frame: number, bold: boolean): string {
+  return textAnimations[config.animationStyle](text, theme, frame, bold);
 }
 
 function renderThinkingHeading(context: ThinkingHeadingContext, frame: number): string {

@@ -2,16 +2,20 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+export type AnimationStyle = "solid" | "gradient";
+
 type CompactThinkingConfig = {
   useSummaryTitlesAsThinkingTitle: boolean;
   previewLines: number;
   animationIntervalMs: number;
+  animationStyle: AnimationStyle;
 };
 
 const DEFAULT_CONFIG: CompactThinkingConfig = {
   useSummaryTitlesAsThinkingTitle: true,
   previewLines: 3,
   animationIntervalMs: 90,
+  animationStyle: "solid",
 };
 
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
@@ -25,18 +29,20 @@ function loadConfig(): CompactThinkingConfig {
   }
 
   const value = JSON.parse(readFileSync(path, "utf8")) as Partial<CompactThinkingConfig>;
+  const animationStyle = value.animationStyle ?? DEFAULT_CONFIG.animationStyle;
 
   if (
     typeof value.useSummaryTitlesAsThinkingTitle !== "boolean" ||
     !Number.isInteger(value.previewLines) ||
     (value.previewLines ?? 0) < 0 ||
     !Number.isFinite(value.animationIntervalMs) ||
-    (value.animationIntervalMs ?? 0) < 1
+    (value.animationIntervalMs ?? 0) < 1 ||
+    (animationStyle !== "solid" && animationStyle !== "gradient")
   ) {
     throw new Error(`Invalid compact-thinking configuration: ${path}`);
   }
 
-  return value as CompactThinkingConfig;
+  return { ...value, animationStyle } as CompactThinkingConfig;
 }
 
 export const config = loadConfig();
