@@ -25,7 +25,7 @@ export class ThinkingPreview implements Component {
 
   private cache?: {
     width: number;
-    lines: string[];
+    lines: readonly string[];
   };
 
   constructor(text: string, padding: number, style: (text: string) => string) {
@@ -34,13 +34,13 @@ export class ThinkingPreview implements Component {
     this.style = style;
   }
 
-  render(width: number): string[] {
+  render(width: number): readonly string[] {
     if (this.cache?.width === width) {
       return this.cache.lines;
     }
 
     const lines = new Text(this.style(this.text), this.padding, 0).render(width);
-    let result: string[];
+    let result: readonly string[];
     if (lines.length <= config.previewLines) {
       result = lines;
     } else {

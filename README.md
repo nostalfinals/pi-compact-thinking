@@ -19,7 +19,7 @@ Restart Pi after installation.
 
 ## Compatibility
 
-Tested with Pi `1.0.4`.
+Tested with Pi `1.6.0`.
 
 This extension monkey-patches Pi's internal assistant-message renderer. Internal UI APIs may change in future Pi releases, so the extension may require updates after upgrading Pi.
 
