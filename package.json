@@ -13,8 +13,7 @@
     "pi-extension"
   ],
   "files": [
-    "index.ts",
-    "lib",
+    "src",
     "README.md",
     "LICENSE"
   ],
@@ -25,7 +24,7 @@
   },
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./src/index.ts"
     ]
   },
   "peerDependencies": {

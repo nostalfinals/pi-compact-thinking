@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { CompactThinking } from "./lib/compact-thinking.ts";
+import { CompactThinking } from "./compact-thinking.ts";
 
 export default function compactThinking(pi: ExtensionAPI) {
   const compactThinking = new CompactThinking(pi);
